@@ -18,6 +18,6 @@ Either build the project with Go or download the binary, then...
 
 This tool uses the following block explorers:
 
-Blockchain.info: Bitcoin, Bitcoin Testnet
-Etherscan.io: Ethereum, Ethereum Testnet (Ropsten - not implemented for this tool yet)
-btc.com: Bitcoin Cash (Mainnet only)
+* Blockchain.info: Bitcoin, Bitcoin Testnet
+* Etherscan.io: Ethereum, Ethereum Testnet (Ropsten - not implemented for this tool yet)
+* btc.com: Bitcoin Cash (Mainnet only)
