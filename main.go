@@ -11,9 +11,6 @@ import (
 	bip39 "github.com/tyler-smith/go-bip39"
 )
 
-// TODO replace BCH explorer: https://rest.bitcoin.com/v1/address/details/18vgaqy2J5YdoWLRTrZrRg9hvYhLEQrXJp (array?)
-// https://rest.bitcoin.com/#/address/details
-
 var gfx = map[string]string{
 	"head1":    "╒═══════════════════════════════════╤═════════════╤═════════════╤═════════════╤═════════════╕",
 	"head2":    "│               Phrase              │     BTC     │    T.BTC    │     BCH     │     ETH     │",
@@ -25,8 +22,6 @@ var gfx = map[string]string{
 
 // Lastcall is used as a timestamp for the last api call (for rate limiting)
 var lastcall = time.Now()
-
-//TODO list eth tokens
 
 func main() {
 
@@ -44,6 +39,11 @@ func main() {
 		}
 		phrases = []string{phrase}
 	} else {
+		if _, e := os.Stat("phrases.txt"); os.IsNotExist(e) {
+			fmt.Println("Please create a phrases.txt file or call this command followed by a valid 12-word phrase.")
+			return
+		}
+
 		data, err := ioutil.ReadFile("phrases.txt")
 		if err != nil {
 			fmt.Println("data load error: ", err)
