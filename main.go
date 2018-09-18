@@ -23,6 +23,9 @@ var gfx = map[string]string{
 // Lastcall is used as a timestamp for the last api call (for rate limiting)
 var lastcall = time.Now()
 
+// Save lists of addresses for verbose logging if in single address mode
+var addlists = make(map[string][]Address)
+
 func main() {
 
 	var phrases []string
@@ -126,7 +129,7 @@ func main() {
 					bal = firstrun[v].Balance
 				} else {
 					var err error
-					bal, err = p.LookupBTCBal(v)
+					bal, addlists[v], err = p.LookupBTCBal(v)
 					if err != nil {
 						fmt.Println("full bal lookup error: ", err)
 						return
@@ -162,6 +165,12 @@ func main() {
 	// End
 	fmt.Println(gfx["end"])
 	fmt.Println()
+
+	if len(os.Args) > 1 {
+		// Show some verbose balance logging if only looking up a single phrase
+		listAddBals(addlists)
+	}
+
 	fmt.Println(centerText("You're welcome!", 76))
 	fmt.Println()
 }
@@ -190,4 +199,22 @@ func rightBalance(amount float64, width int) string {
 	}
 
 	return strings.Repeat(" ", width-len(v)) + v
+}
+
+func listAddBals(adds map[string][]Address) {
+	order := []string{"btc", "tbt", "bch"}
+
+	for _, cur := range order {
+
+		var line string
+		for i, v := range adds[cur] {
+			if v.Balance > 0 {
+				line += fmt.Sprintf("Child %d (%s) balance: %f\n", i, v.Address, v.Balance)
+			}
+		}
+
+		if line != "" {
+			fmt.Printf("\n  %s:\n%s\n", strings.ToUpper(cur), line)
+		}
+	}
 }

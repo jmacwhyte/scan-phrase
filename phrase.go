@@ -248,7 +248,7 @@ func (p Phrase) LookupBCH(chain uint32, child uint32, count int) (addresses []Ad
 		for _, d := range BTCcom.Data {
 			if d.Address == v.Address {
 				addresses[i].TxCount = d.TxCount
-				addresses[i].Balance = float64(d.Balance / 100000000)
+				addresses[i].Balance = float64(float64(d.Balance) / 100000000)
 				break
 			}
 		}
@@ -392,7 +392,7 @@ func (p Phrase) LookupETH(isTestnet bool) (addresses []Address, err error) {
 }
 
 // LookupBTCBal follows the entire btc/bch chain and finds out the remaining balance for the entire wallet.
-func (p Phrase) LookupBTCBal(coin string) (balance float64, err error) {
+func (p Phrase) LookupBTCBal(coin string) (balance float64, addresses []Address, err error) {
 
 	batch := 50 // How many addresses to fetch at one time
 	skips := 0  // How many empty addresses in a row we've found
@@ -412,6 +412,8 @@ func (p Phrase) LookupBTCBal(coin string) (balance float64, err error) {
 			case "bch":
 				addr, err = p.LookupBCH(chain, child, batch)
 			}
+
+			addresses = append(addresses, addr...)
 
 			for _, v := range addr {
 				balance += v.Balance
