@@ -152,6 +152,8 @@ func (p Phrase) getBitcoinAddresses(chainNo uint32, childNo uint32, count int, t
 			return nil, err
 		}
 		addresses = append(addresses, Address{Address: pkh.EncodeAddress()})
+
+		childNo++
 	}
 
 	return
@@ -193,7 +195,7 @@ func (p Phrase) LookupBTC(chain uint32, child uint32, count int, isTestnet bool)
 
 	for i, v := range addresses {
 		addresses[i].TxCount = BCi[v.Address].TxCount
-		addresses[i].Balance = float64(BCi[v.Address].Balance / 100000000)
+		addresses[i].Balance = float64(float64(BCi[v.Address].Balance) / 100000000)
 	}
 	return
 
