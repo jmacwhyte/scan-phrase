@@ -4,27 +4,27 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
 	bip39 "github.com/tyler-smith/go-bip39"
 )
 
+var showTestnet = false
+
 var gfx = map[string]string{
-	"head1":    "╒═══════════════════════════════════╤═════════════╤═════════════╤═════════════╤═════════════╕",
-	"head2":    "│               Phrase              │     BTC     │    T.BTC    │     BCH     │     ETH     │",
-	"div":      "╞═══════════════════════════════════╪═════════════╪═════════════╪═════════════╪═════════════╡",
-	"ercstart": "╞═══════════════════════════════════╧═════════════╧═════════════╧═════════════╛             │",
-	"ercend":   "╞═══════════════════════════════════╤═════════════╤═════════════╤═════════════╤═════════════╡",
-	"end":      "╘═══════════════════════════════════╧═════════════╧═════════════╧═════════════╧═════════════╛",
+	"start":      "╒═════════════════════════════════════╕\n",
+	"phrase1":    "╒═══╧═════════════════════════════════╕\n",
+	"phrase2":    "│   %s...   │\n", // Show first 28 characters of phrase
+	"phrase3":    "╘═══╤═════════════════════════════════╛\n",
+	"crypto":     "    ┝ %s : %s\n",
+	"subcrypto1": "    │  ┝ %s : %s\n",
+	"subcrypto2": "    │  ┕ %s : %s\n",
+	"end":        "    ╘═══════════════════════════☐ Done!\n",
 }
 
 // Lastcall is used as a timestamp for the last api call (for rate limiting)
 var lastcall = time.Now()
-
-// Save lists of addresses for verbose logging if in single address mode
-var addlists = make(map[string][]Address)
 
 func main() {
 
@@ -61,18 +61,10 @@ func main() {
 		}
 	}
 
-	// Write out the UI header
 	fmt.Println()
-	fmt.Println(gfx["head1"])
-	fmt.Println(gfx["head2"])
-	fmt.Println(gfx["div"])
 
 	// Process each phrase
 	for i, v := range phrases {
-
-		// Record which ones have been used, then look up balances
-		currencies := []string{"btc", "tbt", "bch", "eth"}
-		firstrun := make(map[string]Address)
 
 		// Prepare phrase
 		p, err := NewPhrase(v)
@@ -81,140 +73,110 @@ func main() {
 			return
 		}
 
-		// Display address (width incl. pipes: 37)
-		fmt.Printf("│ #%-4v %s... │", strconv.Itoa(i+1), v[:24])
+		// Display phrase header
+		if i == 0 {
+			fmt.Printf(gfx["start"])
+		} else {
+			fmt.Printf(gfx["phrase1"])
+		}
+		fmt.Printf(gfx["phrase2"], v[:28])
+		fmt.Printf(gfx["phrase3"])
 
-		// Lookup which currencies have been used
-		for _, v := range currencies {
-
-			var addr []Address
-			var err error
-			switch v {
-			case "btc":
-				addr, err = p.LookupBTC(0, 0, 1, false)
-			case "tbt":
-				addr, err = p.LookupBTC(0, 0, 1, true)
-			case "bch":
-				addr, err = p.LookupBCH(0, 0, 1)
-			case "eth":
-				addr, err = p.LookupETH(false)
-			case "tet":
-				addr, err = p.LookupETH(true)
-			}
-			if err != nil {
-				fmt.Println("lookup error: ", err)
-				return
-			}
-
-			if addr[0].TxCount > 0 {
-				fmt.Print(centerText("Used", 13))
-			} else {
-				fmt.Print(centerText("Not used", 13))
-			}
-
-			firstrun[v] = addr[0]
-			fmt.Print("│")
-			time.Sleep(time.Millisecond * 100)
+		// Print each currency
+		p.printBTCBalances("BTC", []BTCFormat{BTCFormat{Coin: "btc32", Type: "BIP32"}, BTCFormat{Coin: "btc44", Type: "BIP44"}})
+		if showTestnet {
+			p.printBTCBalances("TBT", []BTCFormat{BTCFormat{Coin: "tbt32", Type: "BIP32"}, BTCFormat{Coin: "tbt44", Type: "BIP44"}})
+		}
+		p.printBTCBalances("BCH", []BTCFormat{
+			BTCFormat{Coin: "bch32", Type: "BIP32"},
+			BTCFormat{Coin: "bch440", Type: "BIP44-coin0"},
+			BTCFormat{Coin: "bch44145", Type: "BIP44-coin145"},
+		})
+		p.printETHBalances("ETH", false)
+		if showTestnet {
+			p.printETHBalances("TET", true)
 		}
 
-		fmt.Printf("\n│                                   │")
-
-		// Lookup balances
-		for _, v := range currencies {
-			if firstrun[v].TxCount > 0 || firstrun[v].Balance > 0 {
-
-				var bal float64
-				if v == "eth" {
-					// No need to do all that again
-					bal = firstrun[v].Balance
-				} else {
-					var err error
-					bal, addlists[v], err = p.LookupBTCBal(v)
-					if err != nil {
-						fmt.Println("full bal lookup error: ", err)
-						return
-					}
-				}
-
-				fmt.Print(centerBalance(bal, 13))
-				fmt.Print("│")
-			} else {
-				fmt.Print("             │")
-			}
-		}
-
-		// End of balance row
-		fmt.Printf("\n")
-
-		//If we had any tokens...
-		if len(firstrun["eth"].Tokens) > 0 {
-			fmt.Println(gfx["ercstart"])
-
-			for _, v := range firstrun["eth"].Tokens {
-				fmt.Println("│" + strings.Repeat(" ", 40) + centerText(v.Name, 20) + ":" + rightBalance(v.Balance, 15) + " " + v.Ticker + strings.Repeat(" ", 11) + "│")
-			}
-
-			fmt.Println(gfx["ercend"])
-
-		} else if i < len(phrases)-1 {
-			// Start a new line if this isn't the last phrase
-			fmt.Println(gfx["div"])
-		}
 	}
 
 	// End
-	fmt.Println(gfx["end"])
-	fmt.Println()
-
-	if len(os.Args) > 1 {
-		// Show some verbose balance logging if only looking up a single phrase
-		listAddBals(addlists)
-	}
-
-	fmt.Println(centerText("You're welcome!", 76))
+	fmt.Printf(gfx["end"])
 	fmt.Println()
 }
 
-// Center some text inside a given width
-func centerText(label string, width int) string {
-	if len(label) >= width {
-		return label[:width]
-	}
-	l := len(label)
-	n := (width - l) / 2
-
-	return strings.Repeat(" ", n+((width-len(label))%2)) + label + strings.Repeat(" ", n)
+type BTCFormat struct {
+	Coin    string
+	Type    string
+	isUsed  bool
+	balance float64
 }
 
-// Center a number (balance) inside a given width
-func centerBalance(amount float64, width int) string {
-	return centerText(fmt.Sprintf("%.8g", amount), width)
-}
-
-// Right-align a number (balance) inside a given width
-func rightBalance(amount float64, width int) string {
-	v := fmt.Sprintf("%f", amount)
-	if len(v) >= width {
-		return v[:width]
-	}
-
-	return strings.Repeat(" ", width-len(v)) + v
-}
-
-func listAddBals(adds map[string][]Address) {
-	order := []string{"btc", "tbt", "bch"}
-
-	for _, cur := range order {
-
-		var line string
-		for i, v := range adds[cur] {
-			if v.Balance > 0 {
-				line += fmt.Sprintf("Child %d (%s) balance: %f\n", i, v.Address, v.Balance)
-			}
+func (p Phrase) printBTCBalances(label string, coins []BTCFormat) {
+	numused := 0
+	for i, v := range coins {
+		var err error
+		coins[i].balance, coins[i].isUsed, _, err = p.LookupBTCBal(v.Coin)
+		if err != nil {
+			fmt.Printf(gfx["crypto"], "There was a problem with "+v.Coin, err)
 		}
 
-		if line != "" {
-			fmt.Printf("\n  %s:\n%s\n", strings.ToUpper(cur), line)
+		if coins[i].isUsed {
+			numused++
+		}
+	}
+
+	var output string
+
+	if numused == 0 {
+		output = "Unused"
+	} else {
+		output = "** Used ** Balance: "
+		done := 0
+		for _, v := range coins {
+			if v.isUsed {
+				output += fmt.Sprintf("%.5f", v.balance) + label + " (" + v.Type + ")"
+				done++
+				if done < numused {
+					output += ", "
+				}
+			}
+		}
+	}
+
+	fmt.Printf(gfx["crypto"], label, output)
+}
+
+func (p Phrase) printETHBalances(label string, testnet bool) {
+
+	addslice, err := p.LookupETH(testnet)
+	if err != nil {
+		fmt.Printf(gfx["crypto"], "There was a problem with "+label, err)
+		return
+	}
+
+	add := addslice[0]
+
+	var output string
+	if add.TxCount == 0 {
+		output = "Unused"
+	} else {
+		output = fmt.Sprintf("** Used ** Balance: %.5f%s", add.Balance, label)
+	}
+
+	fmt.Printf(gfx["crypto"], label, output)
+
+	//If we had any tokens...
+	if len(add.Tokens) == 0 {
+		return
+	}
+
+	for i, v := range add.Tokens {
+		output = fmt.Sprintf("%.5f%s", v.Balance, v.Ticker)
+
+		if i < len(add.Tokens)-1 {
+			fmt.Printf(gfx["subcrypto1"], v.Name, output)
+		} else {
+			fmt.Printf(gfx["subcrypto2"], v.Name, output)
 		}
 	}
 }

@@ -1,5 +1,7 @@
 package main
 
+//TODO: add in checking for bip44 btc
+
 import (
 	"encoding/json"
 	"errors"
@@ -8,22 +10,18 @@ import (
 	"math"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcutil/hdkeychain"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
 	bip32 "github.com/tyler-smith/go-bip32"
 	bip39 "github.com/tyler-smith/go-bip39"
 )
 
 // Phrase represents a phrase we are examining
 type Phrase struct {
-	master     string
-	brdBtc     *hdkeychain.ExtendedKey
-	brdEthAddr string
+	master string
+	xprv   *hdkeychain.ExtendedKey
 }
 
 // Address represents a crypto address generated from a phrase, including details about how/if it has been used
@@ -56,68 +54,14 @@ func NewPhrase(phrase string) (p *Phrase, err error) {
 
 	// Get our master xprv
 	// Path: m
-	xprv, err := hdkeychain.NewKeyFromString(p.master)
-	if err != nil {
-		return
-	}
-
-	// Set up our BIP32 bitcoin path
-	// Path: m/0H
-	p.brdBtc, err = xprv.Child(hdkeychain.HardenedKeyStart + 0)
-	if err != nil {
-		return
-	}
-
-	// Set up our BIP44 Eth path
-	// Path: m/44H
-	purpose, err := xprv.Child(hdkeychain.HardenedKeyStart + 44)
-	if err != nil {
-		return
-	}
-
-	// Path: m/44H/60H
-	coin, err := purpose.Child(hdkeychain.HardenedKeyStart + 60)
-	if err != nil {
-		return
-	}
-
-	// Path: m/44H/60H/0H
-	account, err := coin.Child(hdkeychain.HardenedKeyStart)
-	if err != nil {
-		return
-	}
-
-	// Path: m/44H/60H/0H/0
-	change, err := account.Child(0)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-
-	// Path: m/44H/60H/0H/0/0
-	addidx, err := change.Child(0)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-
-	// Generate our Ethereum address
-	xpub, err := addidx.ECPubKey()
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-
-	pubBytes := xpub.SerializeUncompressed()
-	ethadd := common.BytesToAddress(crypto.Keccak256(pubBytes[1:])[12:])
-	p.brdEthAddr = ethadd.String()
+	p.xprv, err = hdkeychain.NewKeyFromString(p.master)
 
 	return
 }
 
 // getBitcoinAddress by specifying the chain number (0 for normal, 1 for change), child number (address number),
 // and whether testnet or not. Count specifies how many addresses to return.
-func (p Phrase) getBitcoinAddresses(chainNo uint32, childNo uint32, count int, testnet bool) (addresses []Address, err error) {
+func (p Phrase) getBitcoinAddresses(purpose uint32, coin uint32, chainNo uint32, childNo uint32, count int, testnet bool) (addresses []*Address) {
 	if count < 1 {
 		count = 1
 	}
@@ -126,18 +70,12 @@ func (p Phrase) getBitcoinAddresses(chainNo uint32, childNo uint32, count int, t
 		count = 100
 	}
 
-	// Using our saved BIP32 starting point, generate the target address
-	// Path: m/0H/[chain]
-	chain, err := p.brdBtc.Child(chainNo)
-	if err != nil {
-		return
-	}
-
 	for i := 0; i < count; i++ {
 		// Path: m/0H/[chain]/[child] (e.g. m/0H/0/0)
-		child, err := chain.Child(childNo)
+		child, err := deriveHDKey(p.xprv, purpose, coin, 0, chainNo, childNo)
 		if err != nil {
-			return nil, err
+			fmt.Println("Uh-oh! HD derivation error:", err)
+			return
 		}
 
 		// Generate address based on testnet or mainnet
@@ -149,9 +87,10 @@ func (p Phrase) getBitcoinAddresses(chainNo uint32, childNo uint32, count int, t
 
 		pkh, err := child.Address(params)
 		if err != nil {
-			return nil, err
+			fmt.Println("Uh-oh! HD derivation error:", err)
+			return
 		}
-		addresses = append(addresses, Address{Address: pkh.EncodeAddress()})
+		addresses = append(addresses, &Address{Address: pkh.EncodeAddress()})
 
 		childNo++
 	}
@@ -159,14 +98,8 @@ func (p Phrase) getBitcoinAddresses(chainNo uint32, childNo uint32, count int, t
 	return
 }
 
-// LookupBTC looks up one or more bitcoin addresses, starting with the child specified and continuing for the number of
-// addresses specified with "count"
-func (p Phrase) LookupBTC(chain uint32, child uint32, count int, isTestnet bool) (addresses []Address, err error) {
-
-	addresses, err = p.getBitcoinAddresses(chain, child, count, isTestnet)
-	if err != nil {
-		return
-	}
+// LookupBTC takes a slice of addresses and fills in the details
+func (p Phrase) LookupBTC(addresses []*Address, isTestnet bool) (err error) {
 
 	domain := ""
 	if isTestnet {
@@ -198,17 +131,10 @@ func (p Phrase) LookupBTC(chain uint32, child uint32, count int, isTestnet bool)
 		addresses[i].Balance = float64(float64(BCi[v.Address].Balance) / 100000000)
 	}
 	return
-
 }
 
-// LookupBCH looks up one or more bitcoin addresses, starting with the child specified and continuing for the number of
-// addresses specified with "count"
-func (p Phrase) LookupBCH(chain uint32, child uint32, count int) (addresses []Address, err error) {
-
-	addresses, err = p.getBitcoinAddresses(chain, child, count, false)
-	if err != nil {
-		return
-	}
+// LookupBCH takes a slice of addresses and fills in the details
+func (p Phrase) LookupBCH(addresses []*Address) (err error) {
 
 	// Hack: the API will return an array if we request 2+ addresses but only return the single object if we request only 1.
 	// So, to avoid defining two structures, we will just add another address to force the response to be an array.
@@ -256,143 +182,8 @@ func (p Phrase) LookupBCH(chain uint32, child uint32, count int) (addresses []Ad
 	return
 }
 
-// LookupETH looks up the details for this phrase's ethereum address. Returns an array of Addresses to be consistent
-// with other methods, but only populates the first item in the array.
-func (p Phrase) LookupETH(isTestnet bool) (addresses []Address, err error) {
-
-	addresses = []Address{
-		Address{Address: p.brdEthAddr, IsTest: isTestnet},
-	}
-
-	domain := "api"
-	if isTestnet {
-		domain = "api-ropsten"
-	}
-
-	// Lookup activity
-	var ethact struct {
-		Status  string `json:"status"`
-		Message string `json:"message"`
-		Result  []struct {
-			Hash string `json:"hash"`
-		} `json:"result"`
-	}
-
-	err = callAPI("https://"+domain+".etherscan.io/api?module=account&action=txlist&address="+addresses[0].Address, &ethact)
-	if err != nil {
-		return
-	}
-
-	if ethact.Status != "1" && ethact.Message != "No transactions found" {
-		err = errors.New("etherscan error: " + ethact.Message)
-		return
-	}
-
-	addresses[0].TxCount = len(ethact.Result)
-
-	if len(ethact.Result) > 0 {
-		// Ethereumn balance lookup (only if we've seen activity)
-		var ethbal struct {
-			Status  string `json:"status"`
-			Message string `json:"message"`
-			Result  string `json:"result"`
-		}
-
-		err = callAPI("https://"+domain+".etherscan.io/api?module=account&action=balance&address="+addresses[0].Address, &ethbal)
-		if err != nil {
-			return
-		}
-
-		if ethbal.Status != "1" {
-			err = errors.New("etherscan error: " + ethbal.Message)
-			return
-		}
-
-		addresses[0].Balance, err = snipEth(ethbal.Result, 18)
-		if err != nil {
-			return
-		}
-	}
-
-	// ERC20 token lookup
-	var erc20bal struct {
-		Status  string `json:"status"`
-		Message string `json:"message"`
-		Result  []struct {
-			Address string `json:"contractAddress"`
-			To      string `json:"to"`
-			Value   string `json:"value"`
-			Name    string `json:"tokenName"`
-			Ticker  string `json:"tokenSymbol"`
-			Decimal string `json:"tokenDecimal"`
-			Hash    string `json:"hash"`
-		} `json:"result"`
-	}
-
-	err = callAPI("https://"+domain+".etherscan.io/api?module=account&action=tokentx&address="+addresses[0].Address, &erc20bal)
-	if err != nil {
-		return
-	}
-
-	if erc20bal.Status != "1" {
-		return
-	}
-
-	if len(erc20bal.Result) >= 10000 {
-		fmt.Println("WARN: Eth address has at least 10k transactions--any more than that will be omitted.")
-	}
-
-	txlist := make(map[string]int)
-	for _, v := range erc20bal.Result {
-		if v.Ticker == "" {
-			continue
-		}
-
-		idx, e := txlist[v.Ticker]
-
-		if !e {
-			// Create a new entry if we haven't seen it yet
-			txlist[v.Ticker] = len(addresses[0].Tokens)
-			addresses[0].Tokens = append(addresses[0].Tokens, Token{
-				Name:    v.Name,
-				Ticker:  v.Ticker,
-				Address: v.Address,
-			})
-		}
-
-		// Convert number of decimal places this token uses
-		var dec int
-		dec, err = strconv.Atoi(v.Decimal)
-		if err != nil {
-			return
-		}
-
-		// Parse the value and snip it down based on decimal places
-		var val float64
-		val, err = snipEth(v.Value, dec)
-		if err != nil {
-			return
-		}
-
-		// Etherscan returns addresses all lower case...
-		if v.To != strings.ToLower(addresses[0].Address) {
-			// This must be a send, not a receive
-			val *= -1
-		}
-
-		nicebal := float64(val)
-		if dec > 0 {
-			nicebal = float64(val / float64(10^dec))
-		}
-
-		addresses[0].Tokens[idx].Balance += nicebal
-		addresses[0].Tokens[idx].TxCount++
-	}
-	return
-}
-
 // LookupBTCBal follows the entire btc/bch chain and finds out the remaining balance for the entire wallet.
-func (p Phrase) LookupBTCBal(coin string) (balance float64, addresses []Address, err error) {
+func (p Phrase) LookupBTCBal(coin string) (balance float64, isUsed bool, addresses []*Address, err error) {
 
 	batch := 50 // How many addresses to fetch at one time
 	skips := 0  // How many empty addresses in a row we've found
@@ -403,30 +194,99 @@ func (p Phrase) LookupBTCBal(coin string) (balance float64, addresses []Address,
 		child := uint32(0)
 
 		for skips < 10 { // Go until we find 10 in a row that are unused
-			var addr []Address
+			var addr []*Address
 			switch coin {
-			case "btc":
-				addr, err = p.LookupBTC(chain, child, batch, false)
-			case "tbt":
-				addr, err = p.LookupBTC(chain, child, batch, true)
-			case "bch":
-				addr, err = p.LookupBCH(chain, child, batch)
+			case "btc32":
+				addr = p.getBitcoinAddresses(0, 0, chain, child, batch, false)
+				err = p.LookupBTC(addr, false)
+			case "btc44":
+				addr = p.getBitcoinAddresses(44, 0, chain, child, batch, false)
+				err = p.LookupBTC(addr, false)
+			case "tbt32":
+				addr = p.getBitcoinAddresses(0, 0, chain, child, batch, true)
+				err = p.LookupBTC(addr, true)
+			case "tbt44":
+				addr = p.getBitcoinAddresses(44, 1, chain, child, batch, true)
+				err = p.LookupBTC(addr, true)
+			case "bch32":
+				addr = p.getBitcoinAddresses(0, 0, chain, child, batch, false)
+				err = p.LookupBCH(addr)
+			case "bch440":
+				addr = p.getBitcoinAddresses(44, 0, chain, child, batch, false)
+				err = p.LookupBCH(addr)
+			case "bch44145":
+				addr = p.getBitcoinAddresses(44, 145, chain, child, batch, false)
+				err = p.LookupBCH(addr)
 			}
-
-			addresses = append(addresses, addr...)
 
 			for _, v := range addr {
 				balance += v.Balance
 				if v.TxCount > 0 {
+					isUsed = true
 					skips = 0
 				} else {
 					skips++
 				}
 			}
 
+			addresses = append(addresses, addr...)
+
 			child += uint32(batch)
 		}
 	}
+	return
+}
+
+// Derive a key for a specific location in a BIP44 wallet
+func deriveHDKey(xprv *hdkeychain.ExtendedKey, purpose uint32, coin uint32, account uint32, chain uint32, address uint32) (pubkey *hdkeychain.ExtendedKey, err error) {
+
+	// Path: m/44H
+	purp, err := xprv.Child(hdkeychain.HardenedKeyStart + purpose)
+	if err != nil {
+		return
+	}
+
+	if purpose == 0 {
+		// This is a bip32 path
+		// Path: m/0H/[chain]
+		var cha *hdkeychain.ExtendedKey
+		cha, err = purp.Child(chain)
+		if err != nil {
+			return
+		}
+
+		// Path: m/0H/[chain]/[child] (e.g. m/0H/0/0)
+		pubkey, err = cha.Child(address)
+		return
+	}
+
+	// Coin number
+	// Path: m/44H/60H
+	co, err := purp.Child(hdkeychain.HardenedKeyStart + coin)
+	if err != nil {
+		return
+	}
+
+	// Path: m/44H/60H/0H
+	acc, err := co.Child(hdkeychain.HardenedKeyStart + account)
+	if err != nil {
+		return
+	}
+
+	// Path: m/44H/60H/0H/0
+	cha, err := acc.Child(chain)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	// Path: m/44H/60H/0H/0/0
+	pubkey, err = cha.Child(address)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
 	return
 }
 
@@ -451,7 +311,7 @@ func callAPI(url string, target interface{}) (err error) {
 	lastcall = time.Now()
 	err = json.Unmarshal(data, target)
 	if err != nil {
-		fmt.Printf("\n%s\n", string(data))
+		return errors.New("Invalid server response: " + string(data))
 	}
 	return
 }
