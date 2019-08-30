@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -11,6 +12,9 @@ import (
 )
 
 var showTestnet = false
+var showBTC = false
+var showBCH = false
+var showETH = false
 
 var gfx = map[string]string{
 	"start":      "╒═════════════════════════════════════╕\n",
@@ -28,20 +32,31 @@ var lastcall = time.Now()
 
 func main() {
 
+	//  Check our command line flags
+	cflag := flag.String("coin", "all", "which coins to search for (btc, bch, eth, all)")
+	flag.Parse()
+
+	switch strings.ToLower(*cflag) {
+	case "btc":
+		showBTC = true
+	case "bch":
+		showBCH = true
+	case "eth":
+		showETH = true
+	case "all":
+		showBTC = true
+		showBCH = true
+		showETH = true
+	default:
+		fmt.Println("Invalid -coin flag.")
+		return
+	}
+
 	var phrases []string
 
 	// If a phrase is provided, load that in as the only one. Otherwise, load up the "phrases.txt" file.
 	// All phrases will later be validated by the phrase library
-	if len(os.Args) == 13 {
-		var phrase string
-		for i, v := range os.Args[1:] {
-			phrase += v
-			if i < 11 {
-				phrase += " "
-			}
-		}
-		phrases = []string{phrase}
-	} else {
+	if len(flag.Args()) == 0 {
 		if _, e := os.Stat("phrases.txt"); os.IsNotExist(e) {
 			fmt.Println("Please create a phrases.txt file or call this command followed by a valid 12-word phrase.")
 			return
@@ -59,6 +74,19 @@ func main() {
 				phrases = append(phrases, v)
 			}
 		}
+
+	} else if len(flag.Args()) == 12 {
+		var phrase string
+		for i, v := range flag.Args() {
+			phrase += v
+			if i < 11 {
+				phrase += " "
+			}
+		}
+		phrases = []string{phrase}
+	} else {
+		fmt.Println("Please create a phrases.txt file or call this command followed by a valid 12-word phrase.")
+		return
 	}
 
 	fmt.Println()
@@ -83,20 +111,27 @@ func main() {
 		fmt.Printf(gfx["phrase3"])
 
 		// Print each currency
-		p.printBTCBalances("BTC", []BTCFormat{BTCFormat{Coin: "btc32", Type: "BIP32"}, BTCFormat{Coin: "btc44", Type: "BIP44"}})
-		if showTestnet {
-			p.printBTCBalances("TBT", []BTCFormat{BTCFormat{Coin: "tbt32", Type: "BIP32"}, BTCFormat{Coin: "tbt44", Type: "BIP44"}})
-		}
-		p.printBTCBalances("BCH", []BTCFormat{
-			BTCFormat{Coin: "bch32", Type: "BIP32"},
-			BTCFormat{Coin: "bch440", Type: "BIP44-coin0"},
-			BTCFormat{Coin: "bch44145", Type: "BIP44-coin145"},
-		})
-		p.printETHBalances("ETH", false)
-		if showTestnet {
-			p.printETHBalances("TET", true)
+		if showBTC {
+			p.printBTCBalances("BTC", []BTCFormat{BTCFormat{Coin: "btc32", Type: "BIP32"}, BTCFormat{Coin: "btc44", Type: "BIP44"}})
+			if showTestnet {
+				p.printBTCBalances("TBT", []BTCFormat{BTCFormat{Coin: "tbt32", Type: "BIP32"}, BTCFormat{Coin: "tbt44", Type: "BIP44"}})
+			}
 		}
 
+		if showBCH {
+			p.printBTCBalances("BCH", []BTCFormat{
+				BTCFormat{Coin: "bch32", Type: "BIP32"},
+				BTCFormat{Coin: "bch440", Type: "BIP44-coin0"},
+				BTCFormat{Coin: "bch44145", Type: "BIP44-coin145"},
+			})
+		}
+
+		if showETH {
+			p.printETHBalances("ETH", false)
+			if showTestnet {
+				p.printETHBalances("TET", true)
+			}
+		}
 	}
 
 	// End
@@ -104,6 +139,7 @@ func main() {
 	fmt.Println()
 }
 
+// BTCFormat defines the specific flavor of bitcoin
 type BTCFormat struct {
 	Coin    string
 	Type    string

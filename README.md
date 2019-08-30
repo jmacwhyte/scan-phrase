@@ -20,6 +20,8 @@ Either build the project with Go or download the binary, then...
 
 **Multiple phrases:** List up multiple phrases, one per line, in a file titled `phrase.txt`. In the same directory as this file, run the binary with no arguments: `./phrase-scan`
 
+**Single currency:** By default this tool will search for BTC, BCH, and ETH. If you want to search for just one of these, use the `-coin` flag followed by the currency you want to search for. For example, `./scan-phrase -coin=btc` will only look for bitcoin. This will work with either single- or multi-phrase mode, but in the case of single-phrase mode, the flag must always come before the phrase (e.g. `./scan-phrase -coin=btc [12 word phrase]`).
+
 ### Block explorers
 
 This tool uses the following block explorers:
