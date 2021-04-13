@@ -112,7 +112,7 @@ func (p Phrase) LookupBTC(addresses []*Address, isTestnet bool) (err error) {
 		if isTestnet {
 			addresses[i].IsTest = true
 		}
-		addylist += v.Address + "|"
+		addylist += v.Address + ","
 	}
 
 	var BCi map[string]struct {
