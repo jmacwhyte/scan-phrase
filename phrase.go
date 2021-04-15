@@ -10,6 +10,7 @@ import (
 	"math"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/btcsuite/btcd/chaincfg"
@@ -121,7 +122,7 @@ func (p Phrase) LookupBTC(addresses []*Address, isTestnet bool) (err error) {
 		Received int64 `json:"total_received"`
 	}
 
-	err = callAPI("https://"+domain+"blockchain.info/balance?active="+addylist, &BCi)
+	err = callAPI("https://"+domain+"blockchain.info/balance?active="+addylist, &BCi, btcRate)
 	if err != nil {
 		return
 	}
@@ -136,48 +137,37 @@ func (p Phrase) LookupBTC(addresses []*Address, isTestnet bool) (err error) {
 // LookupBCH takes a slice of addresses and fills in the details
 func (p Phrase) LookupBCH(addresses []*Address) (err error) {
 
-	// Hack: the API will return an array if we request 2+ addresses but only return the single object if we request only 1.
-	// So, to avoid defining two structures, we will just add another address to force the response to be an array.
-	if len(addresses) == 1 {
-		addresses = append(addresses, addresses[0])
-	}
-
-	var addylist string
-	for i, v := range addresses {
-		addylist += v.Address
-		if i < len(addresses)-1 {
-			addylist += ","
-		}
-	}
-
-	var BTCcom struct {
-		Error int `json:"err_no"`
-		Data  []struct {
-			Address  string `json:"address"`
-			Balance  int64  `json:"balance"`
-			TxCount  int    `json:"tx_count"`
-			Received int64  `json:"received"`
-		} `json:"data"`
-	}
-
-	err = callAPI("https://bch-chain.api.btc.com/v3/address/"+addylist, &BTCcom)
-	if err != nil {
-		return
-	}
-
-	if BTCcom.Error != 0 {
-		err = errors.New("BTC.com error: " + strconv.Itoa(BTCcom.Error))
-		return
-	}
+	// NOTE: the API no longer supports looking up multiple addresses at once, so we will have to do them one at a time
 
 	for i, v := range addresses {
-		for _, d := range BTCcom.Data {
-			if d.Address == v.Address {
-				addresses[i].TxCount = d.TxCount
-				addresses[i].Balance = float64(float64(d.Balance) / 100000000)
-				break
-			}
+		var BTCcom struct {
+			Error int `json:"err_no"`
+			Data  struct {
+				Address  string `json:"address"`
+				Balance  int64  `json:"balance"`
+				TxCount  int    `json:"tx_count"`
+				Received int64  `json:"received"`
+			} `json:"data"`
 		}
+
+		url := "https://bch-chain.api.btc.com/v3/address/" + v.Address
+		err = callAPI(url, &BTCcom, btcRate)
+		if err != nil {
+			return
+		}
+
+		if BTCcom.Error != 0 {
+			err = errors.New("BTC.com error: " + strconv.Itoa(BTCcom.Error))
+			return
+		}
+
+		// We'll stop at the first unused address
+		if BTCcom.Data.TxCount == 0 {
+			return
+		}
+
+		addresses[i].TxCount = BTCcom.Data.TxCount
+		addresses[i].Balance = float64(float64(BTCcom.Data.Balance) / 100000000)
 	}
 	return
 }
@@ -290,14 +280,19 @@ func deriveHDKey(xprv *hdkeychain.ExtendedKey, purpose uint32, coin uint32, acco
 	return
 }
 
-func callAPI(url string, target interface{}) (err error) {
+func callAPI(url string, target interface{}, rate int64) (err error) {
+
+	prnt := fmt.Sprintf("Please wait: %s...%s", url[8:30], url[len(url)-10:])
+	fmt.Printf("%s\r", prnt)
+
 	//rate limit
-	if time.Since(lastcall) < time.Millisecond*200 {
-		time.Sleep(lastcall.Add(time.Millisecond * 200).Sub(time.Now()))
-	}
+	time.Sleep(time.Until(lastcall.Add(time.Millisecond * time.Duration(rate))))
 
 	var res *http.Response
-	res, err = http.Get(url)
+	client := http.Client{
+		Timeout: 5 * time.Second,
+	}
+	res, err = client.Get(url)
 	if err != nil {
 		return
 	}
@@ -308,11 +303,13 @@ func callAPI(url string, target interface{}) (err error) {
 		return
 	}
 
-	lastcall = time.Now()
 	err = json.Unmarshal(data, target)
 	if err != nil {
 		return errors.New("Invalid server response: " + string(data))
 	}
+	lastcall = time.Now()
+
+	fmt.Printf("%s\r", strings.Repeat(" ", len(prnt)))
 	return
 }
 

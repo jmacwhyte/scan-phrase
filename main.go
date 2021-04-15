@@ -29,6 +29,8 @@ var gfx = map[string]string{
 
 // Lastcall is used as a timestamp for the last api call (for rate limiting)
 var lastcall = time.Now()
+var etherscanRate = int64(5000)
+var btcRate = int64(200)
 
 func main() {
 
@@ -91,6 +93,10 @@ func main() {
 
 	fmt.Println()
 
+	if showETH {
+		fmt.Printf("Ethereum balances will take a long time to look up (sorry).\n\n")
+	}
+
 	// Process each phrase
 	for i, v := range phrases {
 
@@ -112,17 +118,17 @@ func main() {
 
 		// Print each currency
 		if showBTC {
-			p.printBTCBalances("BTC", []BTCFormat{BTCFormat{Coin: "btc32", Type: "BIP32"}, BTCFormat{Coin: "btc44", Type: "BIP44"}})
+			p.printBTCBalances("BTC", []BTCFormat{{Coin: "btc32", Type: "BIP32"}, {Coin: "btc44", Type: "BIP44"}})
 			if showTestnet {
-				p.printBTCBalances("TBT", []BTCFormat{BTCFormat{Coin: "tbt32", Type: "BIP32"}, BTCFormat{Coin: "tbt44", Type: "BIP44"}})
+				p.printBTCBalances("TBT", []BTCFormat{{Coin: "tbt32", Type: "BIP32"}, {Coin: "tbt44", Type: "BIP44"}})
 			}
 		}
 
 		if showBCH {
 			p.printBTCBalances("BCH", []BTCFormat{
-				BTCFormat{Coin: "bch32", Type: "BIP32"},
-				BTCFormat{Coin: "bch440", Type: "BIP44-coin0"},
-				BTCFormat{Coin: "bch44145", Type: "BIP44-coin145"},
+				{Coin: "bch32", Type: "BIP32"},
+				{Coin: "bch440", Type: "BIP44-coin0"},
+				{Coin: "bch44145", Type: "BIP44-coin145"},
 			})
 		}
 

@@ -32,7 +32,7 @@ func (p Phrase) LookupETH(isTestnet bool) (addresses []*Address, err error) {
 	ethadd := common.BytesToAddress(crypto.Keccak256(pubBytes[1:])[12:])
 
 	addresses = []*Address{
-		&Address{Address: ethadd.String(), IsTest: isTestnet},
+		{Address: ethadd.String(), IsTest: isTestnet},
 	}
 
 	domain := "api"
@@ -49,7 +49,8 @@ func (p Phrase) LookupETH(isTestnet bool) (addresses []*Address, err error) {
 		} `json:"result"`
 	}
 
-	err = callAPI("https://"+domain+".etherscan.io/api?module=account&action=txlist&address="+addresses[0].Address, &ethact)
+	url := "https://" + domain + ".etherscan.io/api?module=account&action=txlist&address=" + addresses[0].Address
+	err = callAPI(url, &ethact, etherscanRate)
 	if err != nil {
 		return
 	}
@@ -69,12 +70,14 @@ func (p Phrase) LookupETH(isTestnet bool) (addresses []*Address, err error) {
 			Result  string `json:"result"`
 		}
 
-		err = callAPI("https://"+domain+".etherscan.io/api?module=account&action=balance&address="+addresses[0].Address, &ethbal)
+		url = "https://" + domain + ".etherscan.io/api?module=account&action=balance&address=" + addresses[0].Address
+		err = callAPI(url, &ethbal, etherscanRate)
 		if err != nil {
 			return
 		}
 
 		if ethbal.Status != "1" {
+			fmt.Printf("%#v\n", ethbal)
 			err = errors.New("etherscan error: " + ethbal.Message)
 			return
 		}
@@ -100,7 +103,7 @@ func (p Phrase) LookupETH(isTestnet bool) (addresses []*Address, err error) {
 		} `json:"result"`
 	}
 
-	err = callAPI("https://"+domain+".etherscan.io/api?module=account&action=tokentx&address="+addresses[0].Address, &erc20bal)
+	err = callAPI("https://"+domain+".etherscan.io/api?module=account&action=tokentx&address="+addresses[0].Address, &erc20bal, etherscanRate)
 	if err != nil {
 		return
 	}
