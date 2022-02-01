@@ -35,7 +35,7 @@ var btcRate = int64(200)
 func main() {
 
 	//  Check our command line flags
-	cflag := flag.String("coin", "all", "which coins to search for (btc, bch, eth, all)")
+	cflag := flag.String("coin", "default", "which coins to search for (btc, bch, eth, all)")
 	flag.Parse()
 
 	switch strings.ToLower(*cflag) {
@@ -45,9 +45,8 @@ func main() {
 		showBCH = true
 	case "eth":
 		showETH = true
-	case "all":
+	case "default":
 		showBTC = true
-		showBCH = true
 		showETH = true
 	default:
 		fmt.Println("Invalid -coin flag.")
