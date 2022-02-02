@@ -231,7 +231,7 @@ func (p Phrase) LookupBTCBal(coin string) (balance float64, isUsed bool, address
 func deriveHDKey(xprv *hdkeychain.ExtendedKey, purpose uint32, coin uint32, account uint32, chain uint32, address uint32) (pubkey *hdkeychain.ExtendedKey, err error) {
 
 	// Path: m/44H
-	purp, err := xprv.Child(hdkeychain.HardenedKeyStart + purpose)
+	purp, err := xprv.Derive(hdkeychain.HardenedKeyStart + purpose)
 	if err != nil {
 		return
 	}
@@ -240,38 +240,38 @@ func deriveHDKey(xprv *hdkeychain.ExtendedKey, purpose uint32, coin uint32, acco
 		// This is a bip32 path
 		// Path: m/0H/[chain]
 		var cha *hdkeychain.ExtendedKey
-		cha, err = purp.Child(chain)
+		cha, err = purp.Derive(chain)
 		if err != nil {
 			return
 		}
 
 		// Path: m/0H/[chain]/[child] (e.g. m/0H/0/0)
-		pubkey, err = cha.Child(address)
+		pubkey, err = cha.Derive(address)
 		return
 	}
 
 	// Coin number
 	// Path: m/44H/60H
-	co, err := purp.Child(hdkeychain.HardenedKeyStart + coin)
+	co, err := purp.Derive(hdkeychain.HardenedKeyStart + coin)
 	if err != nil {
 		return
 	}
 
 	// Path: m/44H/60H/0H
-	acc, err := co.Child(hdkeychain.HardenedKeyStart + account)
+	acc, err := co.Derive(hdkeychain.HardenedKeyStart + account)
 	if err != nil {
 		return
 	}
 
 	// Path: m/44H/60H/0H/0
-	cha, err := acc.Child(chain)
+	cha, err := acc.Derive(chain)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
 
 	// Path: m/44H/60H/0H/0/0
-	pubkey, err = cha.Child(address)
+	pubkey, err = cha.Derive(address)
 	if err != nil {
 		fmt.Println(err)
 		return
